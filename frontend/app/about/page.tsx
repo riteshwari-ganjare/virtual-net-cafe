@@ -1,6 +1,7 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 const HIGHLIGHTS = [
   "Government Services",
@@ -53,6 +54,9 @@ const VALUES = [
 ];
 
 export default function AboutPage() {
+  const [year, setYear] = useState("");
+  useEffect(() => setYear(String(new Date().getFullYear())), []);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-50 via-white to-zinc-100 text-zinc-900">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -257,7 +261,7 @@ export default function AboutPage() {
 
       <footer className="relative mx-auto max-w-5xl px-4 pb-10 pt-2 text-center sm:px-6">
         <p className="text-[11px] text-zinc-400">
-          © {new Date().getFullYear()} Virtual Net Cafe. All rights reserved.
+          © {year} Virtual Net Cafe. All rights reserved.
         </p>
       </footer>
     </div>

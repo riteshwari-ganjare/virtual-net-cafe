@@ -64,6 +64,9 @@ const FALLBACK = [
 
 export default function Home() {
   const [services, setServices] = useState<string[]>(FALLBACK);
+  const [year, setYear] = useState("");
+
+  useEffect(() => setYear(String(new Date().getFullYear())), []);
 
   useEffect(() => {
     fetch(`${API}/api/services`)
@@ -215,7 +218,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="relative border-t border-zinc-200/60 bg-white/50 backdrop-blur">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-2 px-5 py-5 text-xs text-zinc-400 sm:flex-row">
-          <p>© {new Date().getFullYear()} Virtual Net Cafe. All rights reserved.</p>
+          <p>© {year} Virtual Net Cafe. All rights reserved.</p>
           <p>
             Made with <span className="text-rose-400">♥</span> for your convenience
           </p>
