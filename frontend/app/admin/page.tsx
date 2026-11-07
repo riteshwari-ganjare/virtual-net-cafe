@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth, API } from "@/components/AuthProvider";
 
 interface Doc { url: string; fileId: string; name: string; }
+interface ServiceItem { _id: string; name: string; documents?: string[]; }
 interface App {
   _id: string;
   userId: { name: string; email: string } | string;
@@ -10,30 +11,31 @@ interface App {
   status: string;
   basicInfo?: { name: string; phone: string; email: string; address: string };
   uploadedDocs?: Doc[];
+  paymentReceiptUrl?: string;
   finalResultUrl?: string;
   createdAt: string;
 }
 
 const STATUS = {
-  Submitted: {
-    badge: "bg-amber-50 text-amber-700 border-amber-200",
-    dot: "bg-amber-500",
-  },
-  "In Progress": {
-    badge: "bg-blue-50 text-blue-700 border-blue-200",
-    dot: "bg-blue-500",
-  },
-  Completed: {
-    badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    dot: "bg-emerald-500",
-  },
+  Submitted: { badge: "bg-amber-50 text-amber-700 border-amber-200", dot: "bg-amber-500" },
+  "In Progress": { badge: "bg-blue-50 text-blue-700 border-blue-200", dot: "bg-blue-500" },
+  "Ready for Payment": { badge: "bg-violet-50 text-violet-700 border-violet-200", dot: "bg-violet-500" },
+  "Payment Submitted": { badge: "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200", dot: "bg-fuchsia-500" },
+  Completed: { badge: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
 } as const;
 
-const FILTERS = ["All", "Submitted", "In Progress", "Completed"] as const;
+const FILTERS = ["All", "Submitted", "In Progress", "Ready for Payment", "Payment Submitted", "Completed"] as const;
+const ADMIN_STATUS_OPTIONS = ["Submitted", "In Progress", "Ready for Payment"] as const;
 
 export default function AdminPage() {
   const { token, user, loading } = useAuth();
   const [apps, setApps] = useState<App[]>([]);
+  const [services, setServices] = useState<ServiceItem[]>([]);
+  const [newServiceName, setNewServiceName] = useState("");
+  const [newServiceDocs, setNewServiceDocs] = useState("");
+  const [serviceErr, setServiceErr] = useState("");
+  const [serviceBusy, setServiceBusy] = useState(false);
+  const [showServices, setShowServices] = useState(false);
   const [err, setErr] = useState("");
   const [finalFiles, setFinalFiles] = useState<Record<string, File | null>>({});
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
@@ -48,12 +50,51 @@ export default function AdminPage() {
       .catch((e) => setErr(e.message));
   };
 
+  const loadServices = () => {
+    if (!token) return;
+    fetch(`${API}/api/services`)
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setServices(d); })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     if (loading) return;
     if (!token) { window.location.href = "/login"; return; }
     if (user?.role !== "admin") { window.location.href = "/dashboard"; return; }
     load();
+    loadServices();
   }, [token, loading, user]);
+
+  const addService = async () => {
+    setServiceErr("");
+    const name = newServiceName.trim();
+    if (!name) { setServiceErr("Name required"); return; }
+    const docs = newServiceDocs.split(",").map((d) => d.trim()).filter(Boolean);
+    setServiceBusy(true);
+    try {
+      const res = await fetch(`${API}/api/services`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, documents: docs }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed");
+      setNewServiceName("");
+      setNewServiceDocs("");
+      loadServices();
+    } catch (e: any) {
+      setServiceErr(e.message);
+    } finally {
+      setServiceBusy(false);
+    }
+  };
+
+  const deleteService = async (id: string) => {
+    if (!confirm("Delete this service?")) return;
+    await fetch(`${API}/api/services/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    loadServices();
+  };
 
   const updateStatus = async (id: string, status: string) => {
     setBusyId(id);
@@ -87,6 +128,7 @@ export default function AdminPage() {
     total: apps.length,
     submitted: apps.filter((a) => a.status === "Submitted").length,
     inProgress: apps.filter((a) => a.status === "In Progress").length,
+    awaitingPayment: apps.filter((a) => a.status === "Ready for Payment" || a.status === "Payment Submitted").length,
     completed: apps.filter((a) => a.status === "Completed").length,
   }), [apps]);
 
@@ -129,6 +171,12 @@ export default function AdminPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowServices(true)}
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50"
+            >
+              Manage Services
+            </button>
             <div className="hidden text-right sm:block">
               <p className="text-xs font-semibold leading-tight">{user?.name}</p>
               <p className="text-[11px] text-zinc-400">Administrator</p>
@@ -140,13 +188,71 @@ export default function AdminPage() {
         </div>
       </header>
 
+      {/* Services modal */}
+      {showServices && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowServices(false)}>
+          <div
+            className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold">Services & Required Documents</h2>
+              <button onClick={() => setShowServices(false)} className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100">Close</button>
+            </div>
+            <p className="mt-1 text-[11px] text-zinc-500">Add a service and its required document list (comma separated).</p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <input
+                value={newServiceName}
+                onChange={(e) => setNewServiceName(e.target.value)}
+                placeholder="Service name"
+                className="flex-1 rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+              />
+              <input
+                value={newServiceDocs}
+                onChange={(e) => setNewServiceDocs(e.target.value)}
+                placeholder="Required docs (comma separated)"
+                className="flex-[2] rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+              />
+              <button
+                disabled={serviceBusy}
+                onClick={addService}
+                className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {serviceBusy ? "Adding..." : "Add"}
+              </button>
+            </div>
+            {serviceErr && <p className="mt-2 text-xs text-red-600">{serviceErr}</p>}
+            <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+              {services.map((s) => (
+                <div key={s._id} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">{s.name}</p>
+                    <p className="truncate text-[11px] text-zinc-500">
+                      {(s.documents || []).length ? (s.documents || []).join(", ") : "No required docs"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => deleteService(s._id)}
+                    className="ml-3 shrink-0 text-xs font-medium text-red-600 hover:underline"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+              {services.length === 0 && <p className="text-xs text-zinc-400">No services yet.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="mx-auto max-w-6xl px-5 py-6">
         {/* Stats */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {[
             { label: "Total", value: stats.total, accent: "text-zinc-900" },
             { label: "Submitted", value: stats.submitted, accent: "text-amber-600" },
             { label: "In Progress", value: stats.inProgress, accent: "text-blue-600" },
+            { label: "Payment", value: stats.awaitingPayment, accent: "text-violet-600" },
             { label: "Completed", value: stats.completed, accent: "text-emerald-600" },
           ].map((s) => (
             <div
@@ -243,7 +349,7 @@ export default function AdminPage() {
                       </div>
                     )}
 
-                    {(a.uploadedDocs?.length || a.finalResultUrl) ? (
+                    {(a.uploadedDocs?.length || a.paymentReceiptUrl || a.finalResultUrl) ? (
                       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                         {a.uploadedDocs?.map((d, i) => (
                           <a
@@ -256,6 +362,16 @@ export default function AdminPage() {
                             📎 {d.name || "doc"}
                           </a>
                         ))}
+                        {a.paymentReceiptUrl && (
+                          <a
+                            href={a.paymentReceiptUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700 transition hover:bg-violet-100"
+                          >
+                            Receipt
+                          </a>
+                        )}
                         {a.finalResultUrl && (
                           <a
                             href={a.finalResultUrl}
@@ -272,23 +388,25 @@ export default function AdminPage() {
 
                   {/* Right: actions */}
                   <div className="flex shrink-0 flex-col gap-2 sm:w-56">
-                    <select
-                      disabled={isBusy}
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 disabled:opacity-50"
-                      value={a.status}
-                      onChange={(e) => updateStatus(a._id, e.target.value)}
-                    >
-                      <option>Submitted</option>
-                      <option>In Progress</option>
-                      <option>Completed</option>
-                    </select>
+                    {a.status !== "Completed" && a.status !== "Payment Submitted" && (
+                      <select
+                        disabled={isBusy}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 disabled:opacity-50"
+                        value={ADMIN_STATUS_OPTIONS.includes(a.status as any) ? a.status : "Submitted"}
+                        onChange={(e) => updateStatus(a._id, e.target.value)}
+                      >
+                        {ADMIN_STATUS_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    )}
 
-                    {a.status !== "Completed" && (
-                      <div className="space-y-1.5 rounded-lg border border-zinc-200 bg-zinc-50/60 p-2">
+                    {a.status === "Payment Submitted" && (
+                      <div className="space-y-1.5 rounded-lg border border-violet-200 bg-violet-50/50 p-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-700">
+                          Payment received — upload submitted form print
+                        </p>
                         <label className="block">
-                          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                            Final document
-                          </span>
                           <input
                             type="file"
                             disabled={isBusy}
@@ -306,9 +424,20 @@ export default function AdminPage() {
                           onClick={() => complete(a._id)}
                           className="w-full rounded-lg bg-emerald-600 py-1.5 text-[11px] font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-zinc-300 disabled:text-zinc-500"
                         >
-                          {isBusy ? "Completing..." : "Complete & Delete Originals"}
+                          {isBusy ? "Sending..." : "Send Final Document & Complete"}
                         </button>
                       </div>
+                    )}
+
+                    {a.status === "Ready for Payment" && (
+                      <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-[11px] text-zinc-600">
+                        Waiting for user to upload payment receipt.
+                      </p>
+                    )}
+                    {a.status === "Completed" && (
+                      <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] font-semibold text-emerald-700">
+                        Completed
+                      </p>
                     )}
                   </div>
                 </div>

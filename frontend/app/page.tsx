@@ -92,6 +92,12 @@ export default function Home() {
           </div>
           <nav className="flex items-center gap-3">
             <Link
+              href="/about"
+              className="rounded-full px-4 py-1.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900"
+            >
+              About
+            </Link>
+            <Link
               href="/login"
               className="rounded-full px-4 py-1.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900"
             >
